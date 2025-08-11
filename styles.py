@@ -383,15 +383,17 @@ def apply_custom_styles():
         }
     }
     
-    /* Tooltip styles - white text on dark background for better contrast */
+    /* Tooltip styles - black text on light background for better contrast */
     [data-baseweb="tooltip"] {
-        background-color: rgba(33, 37, 41, 0.95) !important;
+        background-color: rgba(255, 255, 255, 0.95) !important;
+        border: 1px solid rgba(0, 0, 0, 0.2) !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
     }
     
     [data-baseweb="tooltip"] > div {
-        color: white !important;
+        color: black !important;
         font-size: 14px !important;
-        font-weight: 400 !important;
+        font-weight: 500 !important;
     }
     
     /* Help tooltip icon styling */
@@ -401,13 +403,14 @@ def apply_custom_styles():
     
     /* Tooltip content styling */
     div[role="tooltip"] {
-        background-color: rgba(33, 37, 41, 0.95) !important;
-        color: white !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        background-color: rgba(255, 255, 255, 0.95) !important;
+        color: black !important;
+        border: 1px solid rgba(0, 0, 0, 0.2) !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
     }
     
     div[role="tooltip"] * {
-        color: white !important;
+        color: black !important;
     }
     
     /* Button tooltip styling */
@@ -416,7 +419,8 @@ def apply_custom_styles():
     }
     
     button[title]:hover::after {
-        color: white !important;
+        color: black !important;
+        background-color: rgba(255, 255, 255, 0.95) !important;
     }
     
     /* Custom animations */
