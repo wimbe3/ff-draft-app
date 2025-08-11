@@ -25,9 +25,6 @@ fileWatcherType = "auto"
 # Tab title
 gatherUsageStats = false
 
-# Show Streamlit menu
-showSidebarNavigation = true
-
 [client]
 # Show error details
 showErrorDetails = true
