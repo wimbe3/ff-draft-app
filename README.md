@@ -1,6 +1,15 @@
 # Fantasy Football Mock Draft Simulator
 
+**Version 1.2.0** - Updated 2025-08-11
+
 A comprehensive Fantasy Football Mock Draft Simulator built with Streamlit, featuring smart autopick algorithms, keeper support, and a beautiful Sleeper-style interface.
+
+## Recent Updates (v1.2.0)
+- Fixed autopick algorithm to correctly handle player selection
+- Fixed draft position tracking - users can now draft from any position  
+- Enhanced SOS display with text labels and visual indicators
+- Improved debugging and error handling
+- Performance optimizations for large player pools
 
 ## Features
 
