@@ -177,6 +177,58 @@ def apply_custom_styles():
         background-color: #F57C00 !important;
     }
     
+    /* Special styling for key draft action buttons - Larger and bold */
+    /* Target buttons containing specific text */
+    .stButton:has(button:contains("Make Pick")) > button,
+    .stButton:has(button:contains("Autopick")) > button,
+    .stButton:has(button:contains("Skip Keeper")) > button {
+        font-size: 20px !important;
+        padding: 16px 28px !important;
+        min-height: 65px !important;
+        font-weight: 800 !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.15) !important;
+        min-width: 150px !important;
+    }
+    
+    /* Make Pick button - Primary action */
+    .stButton:has(button:contains("Make Pick")) > button {
+        background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%) !important;
+        border: 2px solid #1565C0 !important;
+        font-weight: 800 !important;
+    }
+    
+    .stButton:has(button:contains("Make Pick")) > button:hover:not(:disabled) {
+        background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%) !important;
+        transform: translateY(-2px) scale(1.02) !important;
+        box-shadow: 0 6px 12px rgba(33, 150, 243, 0.3) !important;
+    }
+    
+    /* Autopick button - Secondary action */
+    .stButton:has(button:contains("Autopick")) > button {
+        background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%) !important;
+        border: 2px solid #E65100 !important;
+        font-weight: 800 !important;
+    }
+    
+    .stButton:has(button:contains("Autopick")) > button:hover {
+        background: linear-gradient(135deg, #F57C00 0%, #E65100 100%) !important;
+        transform: translateY(-2px) scale(1.02) !important;
+        box-shadow: 0 6px 12px rgba(255, 152, 0, 0.3) !important;
+    }
+    
+    /* Skip Keeper button */
+    .stButton:has(button:contains("Skip Keeper")) > button {
+        background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%) !important;
+        border: 2px solid #6A1B9A !important;
+        font-weight: 900 !important;
+    }
+    
+    .stButton:has(button:contains("Skip Keeper")) > button:hover {
+        background: linear-gradient(135deg, #7B1FA2 0%, #6A1B9A 100%) !important;
+        transform: translateY(-2px) scale(1.02) !important;
+        box-shadow: 0 6px 12px rgba(156, 39, 176, 0.3) !important;
+    }
+    
     /* Metric styles - Clean cards */
     [data-testid="metric-container"] {
         background-color: white;
@@ -383,44 +435,83 @@ def apply_custom_styles():
         }
     }
     
-    /* Tooltip styles - black text on light background for better contrast */
-    [data-baseweb="tooltip"] {
-        background-color: rgba(255, 255, 255, 0.95) !important;
-        border: 1px solid rgba(0, 0, 0, 0.2) !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+    /* Tooltip styles - FORCE black text on white background for maximum contrast */
+    [data-baseweb="tooltip"],
+    [data-baseweb="tooltip-content"],
+    div[role="tooltip"],
+    .stTooltip,
+    [data-testid*="tooltip"],
+    [class*="tooltip"] {
+        background-color: white !important;
+        background: white !important;
+        border: 2px solid #333 !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+        z-index: 99999 !important;
     }
     
-    [data-baseweb="tooltip"] > div {
+    [data-baseweb="tooltip"] > div,
+    [data-baseweb="tooltip-content"] > div,
+    div[role="tooltip"] > div,
+    .stTooltip > div,
+    [data-testid*="tooltip"] > div,
+    [class*="tooltip"] > div,
+    [data-baseweb="tooltip"] *,
+    [data-baseweb="tooltip-content"] *,
+    div[role="tooltip"] *,
+    .stTooltip *,
+    [data-testid*="tooltip"] *,
+    [class*="tooltip"] * {
+        color: #000000 !important;
         color: black !important;
         font-size: 14px !important;
-        font-weight: 500 !important;
+        font-weight: 600 !important;
+        text-shadow: none !important;
+    }
+    
+    /* Streamlit button help tooltips - FORCE black text */
+    [data-baseweb="tooltip-content"],
+    [data-baseweb="BODY"] {
+        color: #000000 !important;
+        background-color: white !important;
     }
     
     /* Help tooltip icon styling */
     .stTooltipIcon {
-        color: #6c757d;
+        color: #495057 !important;
     }
     
-    /* Tooltip content styling */
-    div[role="tooltip"] {
-        background-color: rgba(255, 255, 255, 0.95) !important;
-        color: black !important;
-        border: 1px solid rgba(0, 0, 0, 0.2) !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+    /* Additional tooltip selectors to ensure coverage */
+    [id*="tooltip"],
+    [aria-describedby*="tooltip"],
+    .tooltip-content,
+    .tooltip-body,
+    .help-tooltip {
+        background-color: white !important;
+        color: #000000 !important;
+        border: 2px solid #333 !important;
     }
     
-    div[role="tooltip"] * {
-        color: black !important;
+    [id*="tooltip"] *,
+    [aria-describedby*="tooltip"] *,
+    .tooltip-content *,
+    .tooltip-body *,
+    .help-tooltip * {
+        color: #000000 !important;
     }
     
-    /* Button tooltip styling */
-    button[title] {
-        position: relative;
+    /* Button tooltip arrow styling */
+    [data-baseweb="tooltip"] > div[data-popper-arrow],
+    div[role="tooltip"] > div[data-popper-arrow] {
+        color: white !important;
+        border-color: #333 !important;
     }
     
-    button[title]:hover::after {
-        color: black !important;
-        background-color: rgba(255, 255, 255, 0.95) !important;
+    /* Ensure tooltips have high contrast background */
+    [data-baseweb="tooltip-inner"],
+    [data-baseweb="tooltip-body"] {
+        background-color: white !important;
+        color: #000000 !important;
+        padding: 8px 12px !important;
     }
     
     /* Custom animations */

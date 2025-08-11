@@ -246,29 +246,61 @@ class UIComponents:
         if position_filter != "All":
             players_df = players_df[players_df['base_position'] == position_filter]
         
-        # Display controls
-        col1, col2 = st.columns([3, 1])
+        # Display controls - Key action buttons side by side
+        # Add custom CSS for larger draft buttons
+        st.markdown("""
+        <style>
+        /* Make draft action buttons larger and more prominent */
+        div[data-testid="column"]:has(button:has-text("Make Pick")),
+        div[data-testid="column"]:has(button:has-text("Autopick")),
+        div[data-testid="column"]:has(button:has-text("Skip Keeper")) {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
         
-        with col1:
-            # Check if current pick is a keeper slot
-            current_team = draft_engine.get_team_on_clock(draft_engine.current_pick)
-            current_round = ((draft_engine.current_pick - 1) // draft_engine.num_teams) + 1
-            is_keeper_slot = False
-            
-            if current_team in draft_engine.keepers:
-                for keeper_player_id, keeper_round in draft_engine.keepers[current_team]:
-                    if keeper_round == current_round:
-                        is_keeper_slot = True
-                        break
-            
-            if is_keeper_slot and current_team == draft_engine.user_position:
-                # Skip keeper slot for user
-                if st.button("⏭️ Skip Keeper", type="primary",
+        /* Target the specific draft buttons and make them larger */
+        button[kind="primary"]:has-text("Make Pick"),
+        button[kind="secondary"]:has-text("Autopick"),
+        button[kind="primary"]:has-text("Skip Keeper"),
+        div:has(> button:has-text("Make Pick")) button,
+        div:has(> button:has-text("Autopick")) button,
+        div:has(> button:has-text("Skip Keeper")) button {
+            font-size: 18px !important;
+            padding: 15px 30px !important;
+            height: auto !important;
+            min-height: 60px !important;
+            font-weight: bold !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Check if current pick is a keeper slot
+        current_team = draft_engine.get_team_on_clock(draft_engine.current_pick)
+        current_round = ((draft_engine.current_pick - 1) // draft_engine.num_teams) + 1
+        is_keeper_slot = False
+        
+        if current_team in draft_engine.keepers:
+            for keeper_player_id, keeper_round in draft_engine.keepers[current_team]:
+                if keeper_round == current_round:
+                    is_keeper_slot = True
+                    break
+        
+        if is_keeper_slot and current_team == draft_engine.user_position:
+            # Skip keeper slot for user - centered button
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("⏭️ Skip Keeper", type="primary", use_container_width=True,
                             help="Skip this pick (already filled by keeper)"):
                     draft_engine.current_pick += 1
                     st.rerun()
-            else:
-                if st.button("🎯 Make Pick", type="primary", disabled=draft_engine.draft_complete, 
+        else:
+            # Make Pick and Autopick buttons side by side - minimal spacing
+            col1, col2, col3, col4 = st.columns([0.8, 0.8, 0.1, 3.3])
+            
+            with col1:
+                if st.button("🎯 **Make Pick**", type="primary", disabled=draft_engine.draft_complete, 
+                            use_container_width=True,
                             help="Draft the selected player for your team"):
                     selected_rows = st.session_state.get('selected_player_rows', [])
                     if selected_rows:
@@ -280,14 +312,15 @@ class UIComponents:
                             st.error("Failed to make pick")
                     else:
                         st.warning("Please select a player first")
-        
-        with col2:
-            if st.button("🤖 Autopick", 
-                        help="Let the AI make the best pick for the team currently on the clock"):
-                team_id = draft_engine.get_team_on_clock(draft_engine.current_pick)
-                player_id = draft_engine.autopick(team_id)
-                if player_id and draft_engine.make_pick(player_id):
-                    st.rerun()
+            
+            with col2:
+                if st.button("🤖 **Autopick**", type="secondary",
+                            use_container_width=True,
+                            help="Let the AI make the best pick for the team currently on the clock"):
+                    team_id = draft_engine.get_team_on_clock(draft_engine.current_pick)
+                    player_id = draft_engine.autopick(team_id)
+                    if player_id and draft_engine.make_pick(player_id):
+                        st.rerun()
         
         # Display players table - show SOS instead of tier/adp
         display_columns = ['rank', 'player_name', 'team', 'base_position', 'bye']
