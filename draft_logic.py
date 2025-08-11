@@ -94,6 +94,8 @@ class DraftEngine:
         # Get owner names from session state if available
         owner_names = st.session_state.get('team_owners', {})
         
+        logger.info(f"Initializing teams: user_position={self.user_position}")
+        
         for i in range(1, self.num_teams + 1):
             # Use stored owner name or default
             if i in owner_names:
@@ -109,7 +111,31 @@ class DraftEngine:
                 owner_name=owner_name,
                 draft_position=i
             )
+        
+        logger.info(f"Team {self.user_position} owner: {teams[self.user_position].owner_name}")
         return teams
+    
+    def reset_draft(self):
+        """Reset the draft while keeping league settings and keepers"""
+        # Reset draft state
+        self.current_pick = 1
+        self.draft_complete = False
+        self.draft_history = []
+        
+        # Reset player data
+        self.players_df['drafted'] = False
+        self.players_df['drafted_by'] = None
+        self.players_df['draft_round'] = None
+        
+        # Clear team rosters (but not keepers)
+        for team in self.teams.values():
+            team.roster = []
+        
+        # Clear session state draft board
+        if 'draft_board' in st.session_state:
+            st.session_state.draft_board = {}
+        
+        logger.info("Draft reset - keeping settings and keepers")
     
     def update_team_owner(self, team_id: int, owner_name: str):
         """Update the owner name for a team"""
@@ -204,7 +230,8 @@ class DraftEngine:
     
     def autopick(self, team_id: int) -> Optional[int]:
         """
-        Smart autopick algorithm that balances best player available with team needs
+        Simplified autopick that closely follows uploaded rankings with slight randomization
+        Ensures each team drafts one K and one DST (typically in last rounds)
         Returns the player_id of the selected player
         """
         
@@ -212,32 +239,161 @@ class DraftEngine:
         available_players = self.players_df[~self.players_df['drafted']].copy()
         
         if available_players.empty:
+            logger.warning(f"No available players for team {team_id}")
             return None
         
-        # Calculate team needs
-        team_needs = self._calculate_team_needs(team)
+        # Sort by rank (following the uploaded rankings)
+        available_players = available_players.sort_values('rank')
+        logger.info(f"Team {team_id} autopick: {len(available_players)} players available, pick #{self.current_pick}")
         
-        # Calculate scores for each available player
-        available_players['autopick_score'] = available_players.apply(
-            lambda row: self._calculate_autopick_score(row, team_needs, team),
-            axis=1
-        )
+        current_round = ((self.current_pick - 1) // self.num_teams) + 1
+        roster_by_position = team.get_roster_by_position()
         
-        # Sort by autopick score and select best
-        available_players = available_players.sort_values('autopick_score', ascending=False)
+        # Check if we need K or DST
+        has_k = len(roster_by_position.get('K', [])) > 0
+        has_dst = len(roster_by_position.get('DST', [])) > 0
         
-        # Add some randomness for more realistic drafting (top 3 choices)
-        top_choices = min(3, len(available_players))
-        weights = [0.6, 0.3, 0.1][:top_choices]
+        # Count remaining picks for this team
+        picks_remaining = 0
+        for future_pick in range(self.current_pick, (self.num_teams * self.total_rounds) + 1):
+            if self.get_team_on_clock(future_pick) == team_id:
+                picks_remaining += 1
         
-        if random.random() < 0.85:  # 85% chance to pick optimally
-            selected_idx = 0
-        else:  # 15% chance for slight reach
-            selected_idx = random.choices(range(top_choices), weights=weights)[0]
+        # Force K/DST selection if running out of picks and still need them
+        force_k = not has_k and picks_remaining <= 2  # Need to get K in last 2 picks
+        force_dst = not has_dst and picks_remaining <= 2  # Need to get DST in last 2 picks
         
-        selected_player = available_players.iloc[selected_idx]
+        # If we must draft K or DST, filter for those positions
+        if force_k or force_dst:
+            needed_positions = []
+            if force_k:
+                needed_positions.append('K')
+            if force_dst:
+                needed_positions.append('DST')
+            
+            # Get best available K or DST
+            position_players = available_players[available_players['base_position'].isin(needed_positions)]
+            if not position_players.empty:
+                # Take the best ranked one - return its index
+                return position_players.index[0]
         
-        return selected_player.name  # Returns the index which is player_id
+        # Filter out players that would violate roster constraints
+        valid_players = []
+        valid_indices = []  # Store the corresponding indices
+        checked_count = 0
+        max_to_check = min(50, len(available_players))  # Check up to 50 players
+        
+        for idx, player in available_players.iterrows():
+            checked_count += 1
+            position = player['base_position']
+            
+            # Handle K and DST drafting strategy
+            if position in ['K', 'DST']:
+                # Already have one? Skip
+                if (position == 'K' and has_k) or (position == 'DST' and has_dst):
+                    if checked_count < max_to_check:
+                        continue
+                # Don't draft K/DST too early (before round 13) unless we're running out of picks
+                if current_round < 13 and picks_remaining > 3:
+                    if checked_count < max_to_check:
+                        continue
+            
+            # Don't draft backup QB/TE too early
+            if position in ['QB', 'TE']:
+                if len(roster_by_position.get(position, [])) >= 1 and current_round < 10:
+                    if checked_count < max_to_check:
+                        continue  # Skip backup QB/TE before round 10
+            
+            # Add to valid players list
+            valid_players.append(player)
+            valid_indices.append(idx)  # Store the index
+            
+            # Stop after finding enough valid options (for performance)
+            if len(valid_players) >= 10:
+                break
+            
+            # Also stop if we've checked enough players
+            if checked_count >= max_to_check:
+                break
+        
+        if not valid_players:
+            # If no valid players found, just take the best available non-K/DST
+            for idx, player in available_players.head(20).iterrows():
+                if player['base_position'] not in ['K', 'DST']:
+                    valid_players.append(player)
+                    valid_indices.append(idx)
+                    break
+            
+            # If still no valid players (very unlikely), take absolute best available
+            if not valid_players:
+                # Just take the top available player
+                first_idx = available_players.index[0]
+                valid_players = [available_players.iloc[0]]
+                valid_indices = [first_idx]
+                logger.debug(f"Team {team_id}: Using fallback - best available player")
+        
+        # Ensure we have valid players to choose from
+        if not valid_indices:
+            logger.error(f"Team {team_id}: No valid indices found, returning first available")
+            if not available_players.empty:
+                first_player_idx = available_players.index[0]
+                logger.info(f"Returning player at index {first_player_idx}: {available_players.iloc[0]['player_name']}")
+                return first_player_idx
+            else:
+                logger.error(f"No available players at all!")
+                return None
+        
+        logger.info(f"Team {team_id}: Found {len(valid_indices)} valid players to choose from")
+        
+        # Add randomization to keep drafts varied
+        # Early rounds: stick closer to rankings
+        # Later rounds: more variation
+        if current_round <= 3:
+            # Rounds 1-3: Pick from top 3 available with weighted randomness
+            num_choices = min(3, len(valid_indices))
+            weights = [0.7, 0.2, 0.1][:num_choices]
+        elif current_round <= 6:
+            # Rounds 4-6: Pick from top 5 available
+            num_choices = min(5, len(valid_indices))
+            weights = [0.5, 0.25, 0.15, 0.07, 0.03][:num_choices]
+        elif current_round <= 10:
+            # Rounds 7-10: Pick from top 7 available
+            num_choices = min(7, len(valid_indices))
+            weights = [0.4, 0.2, 0.15, 0.1, 0.08, 0.05, 0.02][:num_choices]
+        else:
+            # Rounds 11+: More variation, pick from top 10
+            num_choices = min(10, len(valid_indices))
+            # Create descending weights
+            weights = [0.3 * (0.8 ** i) for i in range(num_choices)]
+            # Normalize weights to sum to 1
+            weight_sum = sum(weights)
+            if weight_sum > 0:
+                weights = [w / weight_sum for w in weights]
+            else:
+                weights = [1.0]  # Fallback to equal weight
+        
+        # Make the selection with weighted randomness
+        selected_idx = random.choices(range(num_choices), weights=weights)[0]
+        
+        # Return the stored index for the selected player
+        player_idx = valid_indices[selected_idx]
+        # Verify the player exists and isn't drafted
+        if player_idx in self.players_df.index:
+            selected_player = self.players_df.loc[player_idx]
+            if not selected_player['drafted']:
+                logger.info(f"Team {team_id} selected: {selected_player['player_name']} (index {player_idx})")
+                return player_idx
+            else:
+                logger.warning(f"Team {team_id}: Selected player already drafted, trying fallback")
+        
+        # Fallback - just return the first available
+        for idx in available_players.index:
+            if not self.players_df.loc[idx, 'drafted']:
+                logger.info(f"Team {team_id} fallback selected: {self.players_df.loc[idx, 'player_name']} (index {idx})")
+                return idx
+        
+        logger.error(f"Team {team_id}: No valid players found!")
+        return None
     
     def _calculate_team_needs(self, team: Team) -> Dict[str, float]:
         """Calculate positional needs for a team"""

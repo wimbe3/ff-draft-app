@@ -119,8 +119,7 @@ def render_league_config():
             min_value=8,
             max_value=14,
             value=st.session_state.get('num_teams', 12),
-            step=1,
-            key='num_teams_config'
+            step=1
         )
         
         draft_position = st.number_input(
@@ -128,25 +127,33 @@ def render_league_config():
             min_value=1,
             max_value=num_teams,
             value=st.session_state.get('draft_position', 1),
-            step=1,
-            key='draft_position_config'
+            step=1
         )
     
     with col2:
         st.subheader("Starting Lineup")
+        qb_slots = st.number_input("QB", min_value=0, max_value=3, value=st.session_state.get('roster_config', {}).get('QB', 1))
+        rb_slots = st.number_input("RB", min_value=0, max_value=5, value=st.session_state.get('roster_config', {}).get('RB', 2))
+        wr_slots = st.number_input("WR", min_value=0, max_value=5, value=st.session_state.get('roster_config', {}).get('WR', 2))
+        te_slots = st.number_input("TE", min_value=0, max_value=3, value=st.session_state.get('roster_config', {}).get('TE', 1))
+        flex_slots = st.number_input("FLEX (RB/WR/TE)", min_value=0, max_value=3, value=st.session_state.get('roster_config', {}).get('FLEX', 1))
+        k_slots = st.number_input("K", min_value=0, max_value=2, value=st.session_state.get('roster_config', {}).get('K', 1))
+        dst_slots = st.number_input("DST", min_value=0, max_value=2, value=st.session_state.get('roster_config', {}).get('DST', 1))
+        
         roster_config = {
-            'QB': st.number_input("QB", min_value=0, max_value=3, value=1, key='qb_slots'),
-            'RB': st.number_input("RB", min_value=0, max_value=5, value=2, key='rb_slots'),
-            'WR': st.number_input("WR", min_value=0, max_value=5, value=2, key='wr_slots'),
-            'TE': st.number_input("TE", min_value=0, max_value=3, value=1, key='te_slots'),
-            'FLEX': st.number_input("FLEX (RB/WR/TE)", min_value=0, max_value=3, value=1, key='flex_slots'),
-            'K': st.number_input("K", min_value=0, max_value=2, value=1, key='k_slots'),
-            'DST': st.number_input("DST", min_value=0, max_value=2, value=1, key='dst_slots'),
+            'QB': qb_slots,
+            'RB': rb_slots,
+            'WR': wr_slots,
+            'TE': te_slots,
+            'FLEX': flex_slots,
+            'K': k_slots,
+            'DST': dst_slots
         }
     
     with col3:
         st.subheader("Bench & Totals")
-        bench_slots = st.number_input("Bench Spots", min_value=0, max_value=10, value=6, key='bench_slots')
+        bench_slots = st.number_input("Bench Spots", min_value=0, max_value=10, 
+                                     value=st.session_state.get('roster_config', {}).get('BENCH', 6))
         roster_config['BENCH'] = bench_slots
         
         total_starters = sum([v for k, v in roster_config.items() if k != 'BENCH'])
@@ -170,7 +177,7 @@ def render_league_config():
     
     with col3:
         if st.button("Continue to Keepers →", type="primary", use_container_width=True):
-            # Save configuration
+            # Save configuration - use the direct widget values
             st.session_state.num_teams = num_teams
             st.session_state.draft_position = draft_position
             st.session_state.roster_config = roster_config
@@ -244,6 +251,10 @@ def render_draft_page():
     # Use existing draft engine or create new one
     if 'draft_engine' in st.session_state:
         draft_engine = st.session_state.draft_engine
+        # Ensure the draft position is correct
+        if draft_engine.user_position != st.session_state.draft_position:
+            logger.info(f"Updating draft position from {draft_engine.user_position} to {st.session_state.draft_position}")
+            draft_engine.user_position = st.session_state.draft_position
     else:
         draft_engine = DraftEngine(
             players_df=st.session_state.players_df,
@@ -253,9 +264,109 @@ def render_draft_page():
         )
         st.session_state.draft_engine = draft_engine
     
+    # Debug output
+    logger.info(f"Draft page: user_position={draft_engine.user_position}, draft_position in session={st.session_state.draft_position}")
+    
+    # Initialize draft_in_progress flag
+    if 'draft_in_progress' not in st.session_state:
+        st.session_state.draft_in_progress = False
+    
     # Create UI components
     ui = UIComponents()
     
+    # Check if draft has started
+    if not st.session_state.draft_in_progress:
+        # Show title and instructions first
+        st.title("🏈 Fantasy Football Mock Draft")
+        
+        # Show draft setup info
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("League Size", f"{st.session_state.num_teams} Teams")
+        with col2:
+            st.metric("Your Draft Position", f"#{st.session_state.draft_position}")
+        with col3:
+            st.metric("Total Rounds", st.session_state.total_rounds)
+        
+        st.divider()
+        
+        # Add instructions expander with custom styling (pre-expanded when not started)
+        st.markdown("""
+        <style>
+        /* Style the expander */
+        div[data-testid="stExpander"] > details {
+            border: 2px solid black !important;
+            border-radius: 8px;
+            padding: 5px;
+            background-color: #f8f9fa;
+        }
+        
+        /* Style the expander content */
+        div[data-testid="stExpander"] > details > div {
+            font-size: 16px !important;
+        }
+        
+        /* Style the expander header */
+        div[data-testid="stExpander"] > details > summary {
+            font-size: 18px !important;
+            font-weight: bold !important;
+            color: #2c3e50 !important;
+        }
+        
+        /* Style the expander arrow */
+        div[data-testid="stExpander"] > details > summary > svg {
+            width: 24px !important;
+            height: 24px !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        with st.expander("📖 How to Use This Draft Tool", expanded=True):
+            st.markdown(f"""
+            ### Draft Instructions
+            
+            **Making Your Pick:**
+            1. When it's your turn, you'll see "On Clock" highlighted in yellow
+            2. Browse available players in the table below the draft board
+            3. Click the **checkbox in the leftmost column** of a player row to select them
+            4. Click "🎯 Make Pick" to draft that player
+            
+            **Draft Controls:**
+            - **🤖 Autopick** - Let the AI make one pick for the current team
+            - **🔄 Reset Draft** - Start over from the beginning
+            
+            **Understanding the Board:**
+            - Each column represents a team's picks
+            - Green header indicates your team
+            - Bold players with thick borders are keepers
+            - Colors indicate positions: RB (teal), WR (blue), QB (red), TE (green)
+            
+            **Draft Format:**
+            - Snake draft: Order reverses each round
+            - Round 1: Pick 1→{st.session_state.num_teams}, Round 2: Pick {st.session_state.num_teams}→1, etc.
+            - CPU teams auto-draft when it's their turn
+            """)
+        
+        st.divider()
+        
+        # Start Draft button
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🚀 **START DRAFT**", type="primary", use_container_width=True,
+                        help="Begin the mock draft"):
+                st.session_state.draft_in_progress = True
+                # Initialize draft board if not exists
+                if 'draft_board' not in st.session_state:
+                    st.session_state.draft_board = {}
+                # Check if CPU has first pick and start autopicking
+                if draft_engine.get_team_on_clock(1) != draft_engine.user_position:
+                    st.session_state.cpu_needs_to_draft = True
+                st.rerun()
+        
+        # Don't show draft board until started
+        return
+    
+    # Draft has started - show the full interface
     # Header with draft controls
     col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
     
@@ -276,14 +387,32 @@ def render_draft_page():
         st.metric("On Clock", on_clock_owner)
     
     with col5:
-        if st.button("🔄 Reset Draft", use_container_width=True,
-                    help="Start over from the beginning - requires confirmation"):
-            if st.button("Confirm Reset?", key="confirm_reset"):
-                st.session_state.app_stage = 'upload'
-                for key in ['players_df', 'draft_engine', 'draft_started']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
+        # Show different options based on draft status
+        if not draft_engine.draft_complete:
+            # During draft - show reset with confirmation
+            if 'show_reset_confirm' not in st.session_state:
+                st.session_state.show_reset_confirm = False
+            
+            if not st.session_state.show_reset_confirm:
+                if st.button("🔄 Reset Draft", use_container_width=True,
+                            help="Start over from the beginning - requires confirmation"):
+                    st.session_state.show_reset_confirm = True
+                    st.rerun()
+            else:
+                if st.button("❌ Cancel", use_container_width=True):
+                    st.session_state.show_reset_confirm = False
+                    st.rerun()
+                if st.button("✅ Confirm Reset", use_container_width=True, type="primary"):
+                    st.session_state.show_reset_confirm = False
+                    st.session_state.draft_in_progress = False
+                    draft_engine.reset_draft()
+                    st.session_state.draft_board = {}
+                    # Re-apply keepers
+                    draft_engine._restore_keepers_from_session()
+                    st.rerun()
+        else:
+            # Draft complete - no button here, will be handled below
+            pass
     
     # Auto-draft for CPU teams if it's not the user's turn
     if not draft_engine.draft_complete:
@@ -303,15 +432,27 @@ def render_draft_page():
             draft_engine.current_pick += 1
             st.rerun()
         elif current_team != draft_engine.user_position:
-            # Show status message
-            st.info(f"🤖 Auto-drafting for {draft_engine.teams[current_team].owner_name}...")
+            # Use a placeholder for the status message that will auto-update
+            logger.info(f"Auto-drafting: current_team={current_team}, user_position={draft_engine.user_position}")
+            status_container = st.empty()
+            status_container.info(f"🤖 Auto-drafting for {draft_engine.teams[current_team].owner_name}...")
+            
             # Autopick for CPU team
-            player_id = draft_engine.autopick(current_team)
-            if player_id and draft_engine.make_pick(player_id):
-                st.rerun()
+            try:
+                player_id = draft_engine.autopick(current_team)
+                if player_id:
+                    if draft_engine.make_pick(player_id):
+                        # Clear the status message before rerun
+                        status_container.empty()
+                        st.rerun()
+                    else:
+                        status_container.error(f"Failed to make pick for {draft_engine.teams[current_team].owner_name}")
+                else:
+                    status_container.error(f"No valid player found for {draft_engine.teams[current_team].owner_name}")
+            except Exception as e:
+                status_container.error(f"Error during autopick: {str(e)}")
     
-    # Main draft interface - all on one page
-    # Add instructions expander with custom styling
+    # Show instructions expander (collapsed during active draft)
     st.markdown("""
     <style>
     /* Style the expander */
@@ -358,21 +499,25 @@ def render_draft_page():
         
         **Understanding the Board:**
         - Each column represents a team's picks
-        - Green header (#2) indicates your team
+        - Green header indicates your team
         - Bold players with thick borders are keepers
         - Colors indicate positions: RB (teal), WR (blue), QB (red), TE (green)
         
         **Draft Format:**
         - Snake draft: Order reverses each round
-        - Round 1: Teams 1→10, Round 2: Teams 10→1, etc.
         - CPU teams auto-draft when it's their turn
         """)
     
     ui.render_draft_board(draft_engine, st.session_state.total_rounds)
     
-    # Export section
+    # Export section and restart options
     if draft_engine.draft_complete:
         st.divider()
+        
+        # Success message
+        st.success("🎉 **Draft Complete!** All teams have filled their rosters.")
+        
+        # Export section
         st.subheader("📥 Export Draft Results")
         
         col1, col2, col3 = st.columns(3)
@@ -406,6 +551,50 @@ def render_draft_page():
                 mime="application/json",
                 use_container_width=True
             )
+        
+        # Restart options
+        st.divider()
+        st.subheader("🔄 Start Another Draft")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            **Run Another Mock Draft**
+            - Keep same league settings
+            - Keep same keepers
+            - Keep same draft position
+            - Start a fresh draft
+            """)
+            if st.button("🔁 **Run Another Mock**", type="primary", use_container_width=True,
+                        help="Start a new draft with the same settings and keepers"):
+                # Reset only the draft-specific data, keep settings
+                draft_engine.reset_draft()
+                st.session_state.draft_board = {}
+                st.session_state.show_reset_confirm = False
+                st.session_state.draft_in_progress = False  # Reset to show Start Draft screen
+                # Re-apply keepers
+                draft_engine._restore_keepers_from_session()
+                st.rerun()
+        
+        with col2:
+            st.markdown("""
+            **Start Over Completely**
+            - Upload new rankings
+            - Configure new league
+            - Set new keepers
+            - Fresh start
+            """)
+            if st.button("🆕 **Start Fresh**", type="secondary", use_container_width=True,
+                        help="Start completely over with new rankings and settings"):
+                # Clear everything and go back to upload
+                st.session_state.app_stage = 'upload'
+                for key in ['players_df', 'draft_engine', 'draft_started', 'draft_board', 
+                           'num_teams', 'draft_position', 'roster_config', 'total_rounds',
+                           'keeper_data', 'show_reset_confirm', 'draft_in_progress']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
 
 def main():
     """Main application function"""

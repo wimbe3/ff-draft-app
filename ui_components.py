@@ -326,13 +326,57 @@ class UIComponents:
         display_columns = ['rank', 'player_name', 'team', 'base_position', 'bye']
         
         # Add SOS if it exists in the data
+        sos_column = None
         if 'sos' in players_df.columns:
             display_columns.append('sos')
+            sos_column = 'sos'
         elif 'SOS' in players_df.columns:
             display_columns.append('SOS')
+            sos_column = 'SOS'
         
         # Rename columns for display
         display_df = players_df[display_columns].head(50).copy()
+        
+        # Convert SOS star ratings to text labels with visual indicators
+        if sos_column:
+            sos_mapping = {
+                '5 out of 5 stars': 'Great',
+                '4 out of 5 stars': 'Favorable',
+                '3 out of 5 stars': 'Neutral',
+                '2 out of 5 stars': 'Unfavorable',
+                '1 out of 5 stars': 'Poor',
+                # Handle any variations
+                '5': 'Great',
+                '4': 'Favorable',
+                '3': 'Neutral',
+                '2': 'Unfavorable',
+                '1': 'Poor',
+                5: 'Great',
+                4: 'Favorable',
+                3: 'Neutral',
+                2: 'Unfavorable',
+                1: 'Poor'
+            }
+            
+            # Map to text labels first
+            display_df[sos_column] = display_df[sos_column].map(lambda x: sos_mapping.get(x, x))
+            
+            # Then add emoji indicators for visual clarity
+            def format_sos_with_indicator(val):
+                if val == 'Great':
+                    return '🟢 Great'
+                elif val == 'Favorable':
+                    return '✅ Favorable'  
+                elif val == 'Neutral':
+                    return '➖ Neutral'
+                elif val == 'Unfavorable':
+                    return '⚠️ Unfavorable'
+                elif val == 'Poor':
+                    return '🔴 Poor'
+                return val
+            
+            display_df[sos_column] = display_df[sos_column].apply(format_sos_with_indicator)
+        
         column_rename = {
             'rank': 'Rank',
             'player_name': 'Player',
@@ -414,7 +458,7 @@ class UIComponents:
         </style>
         """, unsafe_allow_html=True)
         
-        # Make it selectable - no styling applied for clean white background
+        # Make dataframe selectable with clean styling
         st.dataframe(
             display_df,
             use_container_width=True,
