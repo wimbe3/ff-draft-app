@@ -27,7 +27,7 @@ logger = setup_logging()
 
 # Page configuration
 st.set_page_config(
-    page_title="Fantasy Football Mock Draft Simulator",
+    page_title="Fantasy Football Mock Draft Simulator v1.2",
     page_icon="🏈",
     layout="wide",
     initial_sidebar_state="collapsed"
