@@ -1,0 +1,36 @@
+[theme]
+# Primary color for interactive elements
+primaryColor = "#4ECDC4"
+
+# Background color for the main content area
+backgroundColor = "#FFFFFF"
+
+# Background color for sidebar
+secondaryBackgroundColor = "#F0F2F6"
+
+# Color used for text
+textColor = "#262730"
+
+# Font family for all text in the app
+font = "sans serif"
+
+[server]
+# Max upload size in MB (for CSV files)
+maxUploadSize = 10
+
+# Enable file watchers
+fileWatcherType = "auto"
+
+[browser]
+# Tab title
+gatherUsageStats = false
+
+# Show Streamlit menu
+showSidebarNavigation = true
+
+[client]
+# Show error details
+showErrorDetails = true
+
+# Theme (light/dark/auto)
+toolbarMode = "minimal"
