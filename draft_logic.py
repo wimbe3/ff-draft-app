@@ -60,6 +60,14 @@ class DraftEngine:
         self.roster_config = roster_config
         self.total_rounds = sum(roster_config.values())
         
+        # Ensure draft status columns exist and are properly initialized
+        if 'drafted' not in self.players_df.columns:
+            self.players_df['drafted'] = False
+        if 'drafted_by' not in self.players_df.columns:
+            self.players_df['drafted_by'] = None
+        if 'draft_round' not in self.players_df.columns:
+            self.players_df['draft_round'] = None
+        
         # Initialize teams
         self.teams = self._initialize_teams()
         
@@ -236,10 +244,20 @@ class DraftEngine:
         """
         
         team = self.teams[team_id]
-        available_players = self.players_df[~self.players_df['drafted']].copy()
+        
+        # Ensure drafted column exists and get available players
+        if 'drafted' not in self.players_df.columns:
+            logger.error(f"Draft status columns not initialized properly")
+            self.players_df['drafted'] = False
+            self.players_df['drafted_by'] = None
+            self.players_df['draft_round'] = None
+        
+        # Use explicit False check to avoid any boolean comparison issues
+        available_players = self.players_df[~self.players_df['drafted'].astype(bool)].copy()
         
         if available_players.empty:
             logger.warning(f"No available players for team {team_id}")
+            logger.debug(f"Total players: {len(self.players_df)}, Drafted: {self.players_df['drafted'].sum()}")
             return None
         
         # Sort by rank (following the uploaded rankings)
@@ -344,6 +362,7 @@ class DraftEngine:
                 return None
         
         logger.info(f"Team {team_id}: Found {len(valid_indices)} valid players to choose from")
+        logger.debug(f"Team {team_id}: valid_indices = {valid_indices[:5]}...")  # Show first 5 for debugging
         
         # Add randomization to keep drafts varied
         # Early rounds: stick closer to rankings
@@ -377,22 +396,30 @@ class DraftEngine:
         
         # Return the stored index for the selected player
         player_idx = valid_indices[selected_idx]
+        logger.debug(f"Team {team_id}: Selected index {selected_idx} from valid_indices, player_idx={player_idx}")
+        
         # Verify the player exists and isn't drafted
         if player_idx in self.players_df.index:
             selected_player = self.players_df.loc[player_idx]
-            if not selected_player['drafted']:
+            # Double-check the drafted status
+            is_drafted = self.players_df.loc[player_idx, 'drafted']
+            if is_drafted == False or is_drafted == 0 or pd.isna(is_drafted):
                 logger.info(f"Team {team_id} selected: {selected_player['player_name']} (index {player_idx})")
                 return player_idx
             else:
-                logger.warning(f"Team {team_id}: Selected player already drafted, trying fallback")
+                logger.warning(f"Team {team_id}: Selected player {selected_player['player_name']} already drafted (drafted={is_drafted}), trying fallback")
+        else:
+            logger.error(f"Team {team_id}: Player index {player_idx} not in dataframe index!")
         
         # Fallback - just return the first available
+        logger.info(f"Team {team_id}: Entering fallback mode")
         for idx in available_players.index:
-            if not self.players_df.loc[idx, 'drafted']:
-                logger.info(f"Team {team_id} fallback selected: {self.players_df.loc[idx, 'player_name']} (index {idx})")
-                return idx
+            if idx in self.players_df.index:
+                if not self.players_df.loc[idx, 'drafted']:
+                    logger.info(f"Team {team_id} fallback selected: {self.players_df.loc[idx, 'player_name']} (index {idx})")
+                    return idx
         
-        logger.error(f"Team {team_id}: No valid players found!")
+        logger.error(f"Team {team_id}: No valid players found! Available count: {len(available_players)}")
         return None
     
     def _calculate_team_needs(self, team: Team) -> Dict[str, float]:

@@ -205,6 +205,12 @@ def render_keeper_config():
         else:
             # Use existing draft engine to preserve keeper data
             draft_engine = st.session_state.draft_engine
+            # Update draft position if it changed
+            if draft_engine.user_position != st.session_state.draft_position:
+                logger.info(f"Updating draft position from {draft_engine.user_position} to {st.session_state.draft_position}")
+                draft_engine.user_position = st.session_state.draft_position
+                # Re-initialize teams to update the "You" label
+                draft_engine.teams = draft_engine._initialize_teams()
         
         # Use UI component to render keeper interface
         ui = UIComponents()
@@ -255,6 +261,8 @@ def render_draft_page():
         if draft_engine.user_position != st.session_state.draft_position:
             logger.info(f"Updating draft position from {draft_engine.user_position} to {st.session_state.draft_position}")
             draft_engine.user_position = st.session_state.draft_position
+            # Re-initialize teams to update the "You" label
+            draft_engine.teams = draft_engine._initialize_teams()
     else:
         draft_engine = DraftEngine(
             players_df=st.session_state.players_df,
@@ -358,6 +366,17 @@ def render_draft_page():
                 # Initialize draft board if not exists
                 if 'draft_board' not in st.session_state:
                     st.session_state.draft_board = {}
+                
+                # Ensure the draft engine is properly initialized
+                # Reset the current pick to 1 to start fresh
+                draft_engine.current_pick = 1
+                draft_engine.draft_complete = False
+                
+                # Log the state of the draft for debugging
+                logger.info(f"Starting draft - Total players: {len(draft_engine.players_df)}")
+                logger.info(f"Players marked as drafted: {draft_engine.players_df['drafted'].sum() if 'drafted' in draft_engine.players_df.columns else 'N/A'}")
+                logger.info(f"Current pick: {draft_engine.current_pick}, User position: {draft_engine.user_position}")
+                
                 # Check if CPU has first pick and start autopicking
                 if draft_engine.get_team_on_clock(1) != draft_engine.user_position:
                     st.session_state.cpu_needs_to_draft = True
@@ -440,16 +459,20 @@ def render_draft_page():
             # Autopick for CPU team
             try:
                 player_id = draft_engine.autopick(current_team)
-                if player_id:
+                logger.info(f"Autopick returned player_id: {player_id} for team {current_team}")
+                if player_id is not None:
                     if draft_engine.make_pick(player_id):
                         # Clear the status message before rerun
                         status_container.empty()
                         st.rerun()
                     else:
+                        logger.error(f"make_pick failed for player_id {player_id}, team {current_team}")
                         status_container.error(f"Failed to make pick for {draft_engine.teams[current_team].owner_name}")
                 else:
+                    logger.error(f"Autopick returned None for team {current_team}")
                     status_container.error(f"No valid player found for {draft_engine.teams[current_team].owner_name}")
             except Exception as e:
+                logger.error(f"Exception during autopick: {str(e)}")
                 status_container.error(f"Error during autopick: {str(e)}")
     
     # Show instructions expander (collapsed during active draft)
