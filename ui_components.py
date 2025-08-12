@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 import logging
 from typing import Dict, List, Optional, Any
+from functools import partial
 import plotly.graph_objects as go
 import plotly.express as px
 from config import (
@@ -537,31 +538,52 @@ class UIComponents:
     def render_keeper_configuration(self, draft_engine):
         """Render keeper configuration interface with editable table"""
         
-        st.subheader("🎯 Keeper Configuration")
-        
         st.markdown("""
         Configure keepers for each team by selecting players and rounds from the dropdowns.
         Each team can have multiple keepers, but only one keeper per round.
+        
+        **Instructions:**
+        1. Select a player and round for each team that has a keeper
+        2. Review all your selections
+        3. Click "Set All Keepers" to apply all changes at once
         """)
         
-        # Get available players
-        available_players = draft_engine.players_df[~draft_engine.players_df['drafted']]
-        player_options = ['None'] + available_players['player_name'].tolist()
+        # Get all players (including those already kept, since we need to be able to reassign them)
+        all_players = draft_engine.players_df.copy()
+        # For dropdowns, we'll use all players
+        player_options = ['None'] + all_players['player_name'].tolist()
+        # For finding player IDs when setting keepers, we'll also use all players
+        available_players = all_players
         
         # Create editable keeper table for all teams
         st.write("### Keeper Assignments")
         
-        # Initialize keeper slots if not in session state
-        if 'keeper_slots' not in st.session_state:
-            st.session_state.keeper_slots = {}
+        # Initialize keeper selections in session state if not present
+        if 'pending_keeper_selections' not in st.session_state:
+            st.session_state.pending_keeper_selections = {}
+            # Pre-populate with existing keepers
             for team_id in range(1, draft_engine.num_teams + 1):
-                st.session_state.keeper_slots[team_id] = {
-                    'player': 'None',
-                    'round': 1
+                current_keeper = None
+                current_round = 1
+                for keeper in draft_engine.teams[team_id].keepers:
+                    current_keeper = keeper.player_name
+                    current_round = keeper.round
+                    break
+                st.session_state.pending_keeper_selections[team_id] = {
+                    'player': current_keeper if current_keeper else 'None',
+                    'round': current_round
                 }
         
-        # Create columns for the table header
-        col1, col2, col3, col4, col5 = st.columns([1, 2.5, 3, 1.5, 1])
+        # Helper function to update player selection
+        def update_player_selection(team_id):
+            st.session_state.pending_keeper_selections[team_id]['player'] = st.session_state[f"keeper_player_{team_id}"]
+        
+        # Helper function to update round selection
+        def update_round_selection(team_id):
+            st.session_state.pending_keeper_selections[team_id]['round'] = st.session_state[f"keeper_round_{team_id}"]
+        
+        # Create columns for the table header (removed Action column)
+        col1, col2, col3, col4, col5 = st.columns([1, 2.5, 3.5, 1.5, 1])
         with col1:
             st.markdown("**Draft Pick**")
         with col2:
@@ -571,16 +593,24 @@ class UIComponents:
         with col4:
             st.markdown("**Round**")
         with col5:
-            st.markdown("**Action**")
+            st.markdown("**Status**")
         
         st.divider()
         
-        # Track changes
-        changes_made = False
+        # Track pending changes
+        has_pending_changes = False
+        
+        # Get all currently selected players (to filter from dropdowns)
+        # Only track players selected in the pending selections, not already drafted players
+        selected_players = set()
+        for tid in range(1, draft_engine.num_teams + 1):
+            player = st.session_state.pending_keeper_selections[tid]['player']
+            if player != 'None':
+                selected_players.add(player)
         
         # Create a row for each team
         for team_id in range(1, draft_engine.num_teams + 1):
-            col1, col2, col3, col4, col5 = st.columns([1, 2.5, 3, 1.5, 1])
+            col1, col2, col3, col4, col5 = st.columns([1, 2.5, 3.5, 1.5, 1])
             
             with col1:
                 # Draft Pick (non-editable)
@@ -598,93 +628,228 @@ class UIComponents:
                     key=f"owner_{team_id}",
                     label_visibility="collapsed"
                 )
-                # Update owner name if changed
+                # Update owner name immediately when changed
                 if owner_name != draft_engine.teams[team_id].owner_name:
                     draft_engine.update_team_owner(team_id, owner_name)
             
             with col3:
-                # Check if team already has a keeper
-                current_keeper = None
-                for keeper in draft_engine.teams[team_id].keepers:
-                    current_keeper = keeper.player_name
-                    break
+                # Player dropdown - use pending selection
+                current_selection = st.session_state.pending_keeper_selections[team_id]['player']
                 
-                # Player dropdown
+                # Filter out players already selected by other teams
+                available_for_team = ['None']
+                for player in player_options[1:]:  # Skip 'None'
+                    # Include if not selected by anyone, or if it's this team's current selection
+                    if player not in selected_players or player == current_selection:
+                        available_for_team.append(player)
+                
                 selected_player = st.selectbox(
                     "Player",
-                    player_options,
-                    index=player_options.index(current_keeper) if current_keeper and current_keeper in player_options else 0,
+                    available_for_team,
+                    index=available_for_team.index(current_selection) if current_selection in available_for_team else 0,
                     key=f"keeper_player_{team_id}",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
+                    on_change=partial(update_player_selection, team_id)
                 )
             
             with col4:
-                # Round selection
-                current_round = 1
-                for keeper in draft_engine.teams[team_id].keepers:
-                    current_round = keeper.round
-                    break
+                # Round selection - use pending selection
+                current_round = st.session_state.pending_keeper_selections[team_id]['round']
                 
                 selected_round = st.selectbox(
                     "Round",
                     range(1, draft_engine.total_rounds + 1),
                     index=current_round - 1,
                     key=f"keeper_round_{team_id}",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
+                    on_change=partial(update_round_selection, team_id)
                 )
             
             with col5:
-                # Set/Clear button
+                # Status indicator
+                # Check if this selection differs from current keeper
+                current_keeper_name = None
+                current_keeper_round = None
+                for keeper in draft_engine.teams[team_id].keepers:
+                    current_keeper_name = keeper.player_name
+                    current_keeper_round = keeper.round
+                    break
+                
                 if selected_player != 'None':
-                    if st.button("Set", key=f"set_keeper_{team_id}", use_container_width=True):
-                        # Find player ID
-                        player_row = available_players[available_players['player_name'] == selected_player]
-                        if not player_row.empty:
-                            player_id = player_row.index[0]
-                            
-                            # Clear existing keeper for this team
-                            for keeper in draft_engine.teams[team_id].keepers[:]:
-                                draft_engine.remove_keeper(team_id, keeper.player_id)
-                            
-                            # Set new keeper
-                            if draft_engine.set_keeper(team_id, player_id, selected_round):
-                                st.success(f"Set {selected_player} as keeper for {draft_engine.teams[team_id].owner_name}")
-                                st.rerun()
-                            else:
-                                st.error(f"Round {selected_round} already taken by another team")
+                    if current_keeper_name != selected_player or current_keeper_round != selected_round:
+                        st.markdown("🔄 **Pending**")
+                        has_pending_changes = True
+                    else:
+                        st.markdown("✅ **Set**")
+                elif current_keeper_name is not None:
+                    # Had a keeper but now selecting None
+                    st.markdown("❌ **Remove**")
+                    has_pending_changes = True
                 else:
-                    # Clear keeper button if team has a keeper
-                    if draft_engine.teams[team_id].keepers:
-                        if st.button("Clear", key=f"clear_keeper_{team_id}", use_container_width=True):
-                            for keeper in draft_engine.teams[team_id].keepers[:]:
-                                draft_engine.remove_keeper(team_id, keeper.player_id)
-                            st.success(f"Cleared keeper for {draft_engine.teams[team_id].owner_name}")
-                            st.rerun()
+                    st.markdown("➖")
         
         st.divider()
         
-        # Summary of current keepers
-        st.write("### Current Keepers Summary")
-        keeper_data = []
-        for team_id, team in draft_engine.teams.items():
-            for keeper in team.keepers:
-                keeper_data.append({
-                    'Pick': f"#{team_id}",
-                    'Owner': team.owner_name,
-                    'Player': keeper.player_name,
-                    'Position': keeper.position,
-                    'Round': keeper.round
-                })
+        # Action buttons - Set All Keepers and Clear Pending
+        if has_pending_changes:
+            col1, col2, col3, col4 = st.columns([1, 2, 1, 1])
+            with col2:
+                if st.button("🎯 **Set All Keepers**", type="primary", use_container_width=True,
+                            help="Apply all pending keeper changes at once"):
+                    # Validate and apply all keeper changes
+                    success_messages = []
+                    error_messages = []
+                    
+                    # First, clear all existing keepers (this will unmark them as drafted)
+                    for team_id in range(1, draft_engine.num_teams + 1):
+                        for keeper in draft_engine.teams[team_id].keepers[:]:
+                            draft_engine.remove_keeper(team_id, keeper.player_id)
+                    
+                    # Now get fresh player data after clearing keepers
+                    # This ensures previously kept players are now available
+                    fresh_players_df = draft_engine.players_df.copy()
+                    
+                    # Then apply all new selections
+                    for team_id in range(1, draft_engine.num_teams + 1):
+                        player_name = st.session_state.pending_keeper_selections[team_id]['player']
+                        selected_round = st.session_state.pending_keeper_selections[team_id]['round']
+                        
+                        if player_name != 'None':
+                            # Find player ID using fresh data
+                            player_row = fresh_players_df[fresh_players_df['player_name'] == player_name]
+                            if not player_row.empty:
+                                player_id = player_row.index[0]
+                                if draft_engine.set_keeper(team_id, player_id, selected_round):
+                                    success_messages.append(f"Set {player_name} for {draft_engine.teams[team_id].owner_name} (Round {selected_round})")
+                                else:
+                                    # Debug why it failed
+                                    is_drafted = draft_engine.players_df.loc[player_id, 'drafted']
+                                    error_messages.append(f"Failed to set {player_name} for {draft_engine.teams[team_id].owner_name} (drafted={is_drafted})")
+                            else:
+                                error_messages.append(f"Could not find player {player_name}")
+                    
+                    # Show results
+                    if success_messages:
+                        for msg in success_messages:
+                            st.success(msg)
+                    if error_messages:
+                        for msg in error_messages:
+                            st.error(msg)
+                    
+                    if success_messages and not error_messages:
+                        st.balloons()
+                    
+                    # Update session state to reflect current keepers
+                    for team_id in range(1, draft_engine.num_teams + 1):
+                        current_keeper = None
+                        current_round = 1
+                        for keeper in draft_engine.teams[team_id].keepers:
+                            current_keeper = keeper.player_name
+                            current_round = keeper.round
+                            break
+                        st.session_state.pending_keeper_selections[team_id] = {
+                            'player': current_keeper if current_keeper else 'None',
+                            'round': current_round
+                        }
+                    
+                    st.rerun()
+            
+            with col3:
+                if st.button("🔄 Reset Changes", type="secondary", use_container_width=True,
+                            help="Reset all pending changes to current keeper settings"):
+                    # Reset pending selections to current keepers
+                    for team_id in range(1, draft_engine.num_teams + 1):
+                        current_keeper = None
+                        current_round = 1
+                        for keeper in draft_engine.teams[team_id].keepers:
+                            current_keeper = keeper.player_name
+                            current_round = keeper.round
+                            break
+                        st.session_state.pending_keeper_selections[team_id] = {
+                            'player': current_keeper if current_keeper else 'None',
+                            'round': current_round
+                        }
+                    st.info("Reset all pending changes")
+                    st.rerun()
         
-        if keeper_data:
-            keeper_df = pd.DataFrame(keeper_data)
-            st.dataframe(
-                keeper_df.sort_values(['Round', 'Pick']),
-                use_container_width=True,
-                hide_index=True
-            )
-        else:
-            st.info("No keepers configured yet. Use the dropdowns above to assign keepers to teams.")
+        # Summary tables
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("### Current Keepers")
+            keeper_data = []
+            for team_id, team in draft_engine.teams.items():
+                for keeper in team.keepers:
+                    keeper_data.append({
+                        'Pick': f"#{team_id}",
+                        'Owner': team.owner_name,
+                        'Player': keeper.player_name,
+                        'Pos': keeper.position,
+                        'Round': keeper.round
+                    })
+            
+            if keeper_data:
+                keeper_df = pd.DataFrame(keeper_data)
+                st.dataframe(
+                    keeper_df.sort_values(['Round', 'Pick']),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=300
+                )
+            else:
+                st.info("No keepers have been set yet.")
+        
+        with col2:
+            st.write("### Pending Changes")
+            pending_data = []
+            for team_id in range(1, draft_engine.num_teams + 1):
+                player_name = st.session_state.pending_keeper_selections[team_id]['player']
+                selected_round = st.session_state.pending_keeper_selections[team_id]['round']
+                
+                # Check current keeper
+                current_keeper_name = None
+                current_keeper_round = None
+                for keeper in draft_engine.teams[team_id].keepers:
+                    current_keeper_name = keeper.player_name
+                    current_keeper_round = keeper.round
+                    break
+                
+                # Only show if there's a change
+                if player_name != 'None':
+                    if current_keeper_name != player_name or current_keeper_round != selected_round:
+                        # Find position for new player
+                        player_row = available_players[available_players['player_name'] == player_name]
+                        position = player_row['base_position'].iloc[0] if not player_row.empty else 'N/A'
+                        
+                        pending_data.append({
+                            'Pick': f"#{team_id}",
+                            'Owner': draft_engine.teams[team_id].owner_name,
+                            'Player': player_name,
+                            'Pos': position,
+                            'Round': selected_round,
+                            'Change': '🔄 Update' if current_keeper_name else '➕ Add'
+                        })
+                elif current_keeper_name is not None:
+                    # Removing a keeper
+                    pending_data.append({
+                        'Pick': f"#{team_id}",
+                        'Owner': draft_engine.teams[team_id].owner_name,
+                        'Player': current_keeper_name,
+                        'Pos': '-',
+                        'Round': '-',
+                        'Change': '❌ Remove'
+                    })
+            
+            if pending_data:
+                pending_df = pd.DataFrame(pending_data)
+                st.dataframe(
+                    pending_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=300
+                )
+            else:
+                st.info("No pending changes.")
     
     def render_draft_analysis(self, draft_engine):
         """Render draft analysis and statistics"""

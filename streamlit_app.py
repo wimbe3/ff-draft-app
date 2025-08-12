@@ -189,7 +189,7 @@ def render_keeper_config():
     """Render the keeper configuration page"""
     st.title("🎯 Keeper Configuration")
     
-    st.markdown("### Step 3: Assign Keeper Players")
+    st.markdown("**Step 3: Assign Keeper Players**")
     
     # Initialize or use existing draft engine
     if 'players_df' in st.session_state:
